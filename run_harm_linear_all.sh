@@ -1,0 +1,37 @@
+#!/bin/bash
+#SBATCH --job-name=harmonize_gwas_eqtl
+#SBATCH --output=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/linear_harmonize_%A_%a.out
+#SBATCH --error=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/linear_harmonize_%A_%a.err
+#SBATCH --time=5:00:00
+#SBATCH --mem=32G
+#SBATCH --partition=tier1q
+#SBATCH --array=1-2
+
+# make log directory
+mkdir -p /gpfs/data/gao-lab/people/Sihao/ad_analysis/logs
+
+# load modules
+module load gcc/12.1.0
+module load R/4.5.1
+
+# define GWAS files array
+GWAS_FILES=(
+    "amyloid.assoc.linear.gz"
+    "gpath.assoc.linear.gz"
+    "tangles.assoc.linear.gz"
+)
+
+# define tissue
+TISSUE="Brain_Amygdala"
+
+# get current file based on array task ID
+GWAS_FILE=${GWAS_FILES[$SLURM_ARRAY_TASK_ID]}
+
+echo "Processing: ${GWAS_FILE}"
+echo "Task ID: ${SLURM_ARRAY_TASK_ID}"
+echo "Tissue: ${TISSUE}"
+
+# run R file
+Rscript harm_linear.R ${GWAS_FILE} ${TISSUE}
+
+echo "Completed: ${GWAS_FILE}"
