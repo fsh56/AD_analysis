@@ -7,8 +7,8 @@ library(tidyverse)
 args = commandArgs(trailingOnly = TRUE)
 
 if (length(args) < 2) {
-  cat("Usage: Rscript batch_harmonize.R <gwas_file_name> <tissue_name>\n")
-  cat("Example: Rscript batch_harmonize.R amyloid.assoc.linear.gz Brain_Amygdala\n")
+  cat("Usage: Rscript harm_linear.R <gwas_file_name> <tissue_name>\n")
+  cat("Example: Rscript harm_linear.R amyloid.assoc.linear.gz Brain_Amygdala\n")
   quit(status = 1)
 }
 
@@ -25,7 +25,7 @@ if (!dir.exists(output_dir)) {
 }
 
 # process gwas data
-cat("processing GWAS data:", gwas_file, "...\n")
+cat("processing GWAS data (linear):", gwas_file, "...\n")
 gwas_path = file.path(gwas_dir, gwas_file)
 if (!file.exists(gwas_path)) {
   stop("GWAS file not found: ", gwas_path)
@@ -93,3 +93,4 @@ for (chr in 1:22) {
   cat("chr", chr, "done!\n\n")
 }
 
+cat("All done\n")

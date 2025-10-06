@@ -2,13 +2,12 @@
 library(data.table)
 library(tidyverse)
 
-# process linear gwas
+# process logistic gwas
 # define args
 args = commandArgs(trailingOnly = TRUE)
-
 if (length(args) < 2) {
-  cat("Usage: Rscript harm_linear.R <gwas_file_name> <tissue_name>\n")
-  cat("Example: Rscript harm_linear.R amyloid.assoc.linear.gz Brain_Amygdala\n")
+  cat("Usage: Rscript harm_logistic.R <gwas_file_name> <tissue_name>\n")
+  cat("Example: Rscript harm_logistic.R diagnosis.assoc.logistic.gz Brain_Amygdala\n")
   quit(status = 1)
 }
 
@@ -25,28 +24,33 @@ if (!dir.exists(output_dir)) {
 }
 
 # process gwas data
-cat("processing GWAS data (linear):", gwas_file, "...\n")
+cat("processing GWAS data (logistic):", gwas_file, "...\n")
 gwas_path = file.path(gwas_dir, gwas_file)
+
 if (!file.exists(gwas_path)) {
   stop("GWAS file not found: ", gwas_path)
 }
 
 out = fread(gwas_path, 
             header = FALSE, 
-            col.names = c("chr", "rsid", "pos", "A1", "test", "nmiss", "beta", "stat", "p"))[
-              , se_out := abs(beta/stat)][
-                !is.infinite(se_out) & se_out != 0 & !is.na(se_out)][
-                  , c("chr_tmp", "pos_tmp", "REF", "ALT") := tstrsplit(rsid, ":", fixed = TRUE)][
-                    , .(rsid, A1, REF, ALT, b_out = beta, se_out, p)] %>% 
+            col.names = c("chr", "rsid", "pos", "A1", "test", "nmiss", "or", "stat", "p"))[
+              , beta := log(or)][                          # convert OR to beta
+                , se_out := abs(beta/stat)][
+                  !is.infinite(se_out) & se_out != 0 & !is.na(se_out)][
+                    , c("chr_tmp", "pos_tmp", "REF", "ALT") := tstrsplit(rsid, ":", fixed = TRUE)][
+                      , .(rsid, A1, REF, ALT, b_out = beta, se_out, p)] %>% 
   unique(by = "rsid")
+
 cat("processed GWAS SNPs:", nrow(out), "\n\n")
 
 # process eqtl
 for (chr in 1:22) {
   cat("processing chr", chr, "\n")
+  
   eqtl_file = paste0("GTEx_Analysis_v10_QTLs-GTEx_Analysis_v10_eQTL_all_associations-",
                      tissue_name, ".v10.allpairs.chr", chr, ".txt.gz")
   eqtl_path = file.path(eqtl_dir, eqtl_file)
+  
   if (!file.exists(eqtl_path)) {
     cat("Warning: eQTL file not found:", eqtl_path, "\n")
     cat("Skipping chr", chr, "\n\n")
