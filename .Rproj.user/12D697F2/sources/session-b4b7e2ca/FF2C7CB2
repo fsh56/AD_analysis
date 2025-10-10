@@ -1,0 +1,26 @@
+{
+    "id": "FF2C7CB2",
+    "path": "~/AD_analysis/fusioMR_analysis_sample_code.Rmd",
+    "project_path": "fusioMR_analysis_sample_code.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1759721651473.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "132,73",
+        "scrollLine": "117"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1757957282,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1760063572627,
+    "read_only": false,
+    "read_only_alternatives": []
+}

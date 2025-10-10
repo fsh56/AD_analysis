@@ -1,0 +1,197 @@
+---
+title: "scmr"
+author: "Bowei Kang"
+date: "2025-02-024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Process data
+bk-eqtl + gwas
+
+```{r}
+library(data.table); library(tidyverse)
+brain_tissues = c("Brain_Amygdala","Brain_Anterior_cingulate_cortex_BA24","Brain_Caudate_basal_ganglia","Brain_Cerebellar_Hemisphere","Brain_Cerebellum","Brain_Cortex","Brain_Frontal_Cortex_BA9","Brain_Hippocampus","Brain_Hypothalamus","Brain_Nucleus_accumbens_basal_ganglia","Brain_Putamen_basal_ganglia","Brain_Spinal_cord_cervical_c-1","Brain_Substantia_nigra")
+tissue_short = c("Amygdala","BA24","Caudate_basal_ganglia","Cerebellar_Hemi","Cerebellum","Cortex","BA9","Hippocampus","Hypothalamus","Nucleus_accumbens_basal_ganglia","Putamen_basal_ganglia","Spinal_cord","Substantia_nigra")
+
+# read in gwas data
+out = fread("../ad_educ/ad_data/dcfdx_ad.assoc.logistic.gz_all.txt") %>% dplyr::select(-pos, -chr) %>% dplyr::rename(b_out=beta, se_out=se) %>% dplyr::filter(se_out!=Inf, se_out!=0) %>% distinct(rsid, .keep_all=T)
+
+for (chr in 1:22) {
+print(chr)
+for (j in 3:length(brain_tissues)) {
+print(paste0(j, ", ", brain_tissues[j]))
+# read in eqtl data
+eqtl_bk = fread(paste0("gtex/", brain_tissues[j], "_", chr, '.txt.gz')) %>% separate(gene_id, into = c("gene_name", "transcript"), sep = "\\.") %>% dplyr::rename(b=slope, se=slope_se, p=pval_nominal) %>% dplyr::filter(se!=Inf, se!=0, p!=1)
+# harmonize
+tmp = eqtl_bk %>% left_join(out, by = c('rsid'='rsid')) %>% mutate(align = ifelse(alt==EFF & ref==REF, 1, ifelse(alt==REF & ref==EFF, -1, NA))) %>% dplyr::filter(!(is.na(align) & !(is.na(b_out)))) %>% mutate(b_out = b_out*align) %>% drop_na(b_out, se_out) %>% dplyr::select(-REF, -EFF, -align, -chr, -transcript)
+# write out
+fwrite(tmp, paste0('harmo_bk/eqtl_ad_', tissue_short[j], '_', chr, '.txt.gz'))
+} # end loop tissues
+} # end loop chr
+```
+
+
+# MR functions 
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(pbapply)
+library(MendelianRandomization)
+library(mvtnorm)
+library(LaplacesDemon)
+library(dirmult)
+library(invgamma)
+source("/gpfs/data/linchen-lab/Bowei/fusiomr_sc_bk/code/init_setup_seso.R")
+Rcpp::sourceCpp("/gpfs/data/linchen-lab/Bowei/fusiomr_sc_bk/code/gibbs_seso_uhp_only.cpp", cacheDir ="/gpfs/data/linchen-lab/Bowei/")
+
+# clumping function
+clump <- function(dat, SNP_col = "eQTL_variant_id", pval_col = "rowmeta", clump_kb = 250, clump_r2 = 0.1, clump_p = 0.999, bfile = "/scratch/t.phs.yihaolu/GWAS_summary_statistics/GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_Analysis_Freeze.SHAPEIT2_phased.MAF01", plink_bin = "plink", pop="EUR") {
+df <- data.frame(rsid = dat[, ..SNP_col], pval = dat[,..pval_col])
+colnames(df) = c("rsid", "pval")
+out <- tryCatch({
+ieugwasr::ld_clump(df, clump_kb=clump_kb, clump_r2=clump_r2, clump_p=clump_p, bfile=bfile, plink_bin = plink_bin, pop = pop)
+}, silent = TRUE, error = function(x) return(NA)
+)
+if(length(out)==1) {
+return(NA)
+}
+MRdat <- dat[which(unlist(dat[,..SNP_col]) %in% out$rsid),]
+return(MRdat)
+}
+
+# function to run MR
+run_mr_seso = function(gene, b_exp, se_exp, b_out, se_out, a_gamma_prior, b_gamma_prior, a_theta_prior, b_theta_prior) {
+# FusioMR-s with uhp only
+niter = 20000
+K = length(b_exp)
+# starting values
+start_val = init_setup(niter, K, alpha_init = 1, beta_init = 0, sigma_gamma_init = 0.1, sigma_theta_init = 0.1)
+# estimation by Rcpp
+res = gibbs_seso_uhp_only_cpp(niter, K, start_val$beta_tk, start_val$theta_tk, start_val$gamma_tk, start_val$sigma2_gamma_tk, start_val$sigma2_theta_tk, b_out, b_exp, (se_out)^2, (se_exp)^2, a_gamma_prior, b_gamma_prior, a_theta_prior, b_theta_prior)
+if(all(!is.na(res))) {
+ids = (niter/2 + 1):niter
+bhat = mean(res$beta_tk[ids], na.rm = T)
+se_bhat = sd(res$beta_tk[ids], na.rm = T)
+pval = 2*(1-pnorm(abs(bhat)/se_bhat))
+} else { 
+bhat = se_bhat = pval = NA 
+}
+# summarize
+out_fusio = c(bhat, se_bhat, pval)
+output = c(gene, K, out_fusio)
+names(output) = c("gene", "niv", "b_fusio", "se_fusio", "p_fusio")
+return(output)
+}
+
+# function for bk only analysis
+process_gene_bk_only <- function(dat1, gene_list1, j, pcut = 0.01, clump_kb = 10, clump_r2 = 0.1, b_gamma_prior_mean, b_theta_prior_mean) {
+message(paste0("Processing gene-", j, ": ", gene_list1[j]))
+tmp = dat1 %>% dplyr::filter(gene_name == gene_list1[j]) %>% dplyr::filter(p <= pcut)
+if (nrow(tmp) > 0) {
+# set hyper parameters S2
+b_gamma_prior_mean = max(1e-3, mean(tmp$beta^2)-mean(tmp$se^2))
+b_theta_prior_mean = max(1e-5, mean(tmp$b_out^2)-mean(tmp$se_out^2))
+# Clumping
+clumped_df = clump(tmp, SNP_col = "rsid", clump_kb = clump_kb, clump_r2 = clump_r2, bfile = "/gpfs/data/linchen-lab/Yihao/Ke/education_AD_GWAS/EUR", pval_col = "p", plink_bin = genetics.binaRies::get_plink_binary())
+# Run MR analysis if conditions are met
+if (all(class(clumped_df) == c("data.table", "data.frame")) &&
+nrow(clumped_df) > 1 && nrow(clumped_df) < 1000) {
+b_exp = clumped_df$beta; se_exp = clumped_df$se; b_out = clumped_df$b_out; se_out = clumped_df$se_out
+# set hyper parameters S1
+K = nrow(clumped_df)
+a_gamma_prior = a_theta_prior = max(2, K/4)
+b_gamma_prior = b_gamma_prior_mean * (a_gamma_prior-1)
+b_theta_prior = b_theta_prior_mean * (a_theta_prior-1)
+res = run_mr_seso(gene_list1[j], b_exp, se_exp, b_out, se_out, a_gamma_prior, b_gamma_prior, a_theta_prior, b_theta_prior)
+res = c(res, 'b_gamma_prior_mean' = b_gamma_prior_mean, 'b_theta_prior_mean' = b_theta_prior_mean)
+return(res)
+} else return(c(gene_list1[j], -1, rep(NA, 5))) # 0 or 1 snp after clumping
+} else return(c(gene_list1[j], -2, rep(NA, 5))) # no snps w/ pval < pcut
+}
+```
+
+
+# Run MR
+
+```{r}
+# source("code/functions.R")
+pcut = 0.001
+clump_kb = 50; clump_r2 = 0.1
+tissue_short = c("Amygdala","BA24","Caudate_basal_ganglia","Cerebellar_Hemi","Cerebellum","Cortex","BA9","Hippocampus","Hypothalamus","Nucleus_accumbens_basal_ganglia","Putamen_basal_ganglia","Spinal_cord","Substantia_nigra")
+j=6
+for (chr in 1:22) {
+chr = 8
+print(chr)
+dat = fread(paste0('harmo_bk/eqtl_ad_', tissue_short[j], '_', chr, '.txt.gz'))
+sumtbl1 = NULL
+dat1 = dat %>% dplyr::rename(beta=b) %>% dplyr::filter(se != Inf, se_out != Inf, se > 0, se_out > 0) %>% drop_na() 
+# aa = dat1 %>% group_by(gene_name) %>% summarise(n = n()); summary(aa$n)
+gene_list1 = unique(dat1$gene_name)
+message(length(gene_list1))
+# set hyper parameters S3
+b_gamma_prior_mean = max(1e-3, mean(dat1$beta^2)-mean(dat1$se^2))
+b_theta_prior_mean = max(1e-5, mean(dat1$b_out^2)-mean(dat1$se_out^2))
+sumtbl1 = do.call(rbind, pblapply(seq_along(gene_list1), function(t) process_gene_bk_only(dat1, gene_list1, t, pcut, clump_kb, clump_r2, b_gamma_prior_mean, b_theta_prior_mean)))
+fwrite(sumtbl1, paste0("sumtbl_bkonly/bkonly_ad_", pcut, "_", clump_kb, "_", clump_r2, "_", tissue_short[j], "_", chr, '.txt'))
+} # end loop chr
+```
+
+
+# Merge results and summarize
+
+```{r}
+# cd /gpfs/data/linchen-lab/Bowei/fusiomr_sc_bk/
+library(data.table); library(tidyverse)
+# function to calculate genomic inflation factor
+calculate_lambda <- function(p_values) {
+p_values = p_values[!is.na(p_values)]
+chi_sq_values <- qchisq(1 - p_values, df=1)
+lambda <- median(chi_sq_values) / qchisq(0.5, df=1)
+return(lambda)
+}
+
+pcut = 0.001; clump_kb = 50; clump_r2 = 0.1
+tissue_short = c("Amygdala","BA24","Caudate_basal_ganglia","Cerebellar_Hemi","Cerebellum","Cortex","BA9","Hippocampus","Hypothalamus","Nucleus_accumbens_basal_ganglia","Putamen_basal_ganglia","Spinal_cord","Substantia_nigra")
+tbl = NULL
+for (j in 1:length(tissue_short)) {
+tissue = tissue_short[j]
+print(tissue)
+res = NULL
+print(length(list.files("sumtbl_bkonly/", pattern = paste0("bkonly_ad_", pcut, "_", clump_kb, "_", clump_r2, "_", tissue, "_*"))))
+for (chr in 1:22) {
+# print(chr)
+file_path1 = paste0("sumtbl_bkonly/bkonly_ad_", pcut, "_", clump_kb, "_", clump_r2, "_", tissue, "_", chr, '.txt')
+tmp1 = fread(file_path1) %>% drop_na(gene)
+if (sum(tmp1[,2]>0) > 0) {
+tmp1 = cbind(tmp1, chr = chr)
+res = rbind(res, tmp1)
+} # end if
+} # end loop chr
+# save merged table, per cell type per setting
+fwrite(res, paste0('merged/bk_s2_ad_', pcut, "_", clump_kb, "_", clump_r2, "_", tissue, ".txt"))
+# get summary
+aa = res 
+K1 = sum(aa$niv > 0)
+K2 = sum(aa$niv >=5)
+lambdas_niv2 = sapply(aa %>% dplyr::filter(niv>=2) %>% dplyr::select(contains('p_')), calculate_lambda)
+lambdas_niv5 = sapply(aa %>% dplyr::filter(niv>=5) %>% dplyr::select(contains('p_')), calculate_lambda)
+tmp = c(tissue, nrow(aa), sum(aa$niv == -1), sum(aa$niv == -2), K1, K2, sum(aa$p_fusio<(0.05/K2) & aa$niv>=5, na.rm = T), median(aa$niv[aa$niv>0]))
+tbl = rbind(tbl, tmp)
+# save summary table per tissue, per setting
+# fwrite(tmp, paste0('out/summary_bk_s2_ad_', pcut, "_", clump_kb, "_", clump_r2, "_", tissue, '.txt'))
+} # end loop j
+colnames(tbl) = c('tissue','n_all','n_neg1','n_neg2','n_2','n_5','n_sig_fusio','med_niv')
+data.frame(tbl)
+```
+
+
+
+
+
+
+
