@@ -1,9 +1,9 @@
 {
     "id": "E6C80972",
-    "path": "/Users/fengsihao/AD_analysis/run_map_rsid.sh",
+    "path": "~/AD_analysis/run_map_rsid.sh",
     "project_path": "run_map_rsid.sh",
     "type": "sh",
-    "hash": "2527027492",
+    "hash": "0",
     "contents": "",
     "dirty": false,
     "created": 1760066901174.0,

@@ -3,9 +3,9 @@
 #SBATCH --output=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/map_rsid_%A_%a.out
 #SBATCH --error=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/map_rsid_%A_%a.err
 #SBATCH --array=2-13
-#SBATCH --time=12:00:00
+#SBATCH --time=6:00:00
 #SBATCH --mem=64G
-#SBATCH --partition=tier1q
+#SBATCH --partition=tier2q
 
 # make log directory
 mkdir -p /gpfs/data/gao-lab/people/Sihao/ad_analysis/logs
@@ -31,7 +31,7 @@ tissues=(
   "Brain_Substantia_nigra"
 )
 
-# 获取当前任务的组织
+# get current tissue
 tissue=${tissues[$SLURM_ARRAY_TASK_ID-1]}
 
 echo "processing tissue: $tissue"
