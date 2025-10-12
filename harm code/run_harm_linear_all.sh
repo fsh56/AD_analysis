@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=harmonize_gwas_eqtl
+#SBATCH --job-name=harmonize_gwas_eqtl_linear
 #SBATCH --output=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/linear_harmonize_%A_%a.out
 #SBATCH --error=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/linear_harmonize_%A_%a.err
 #SBATCH --time=5:00:00
 #SBATCH --mem=32G
 #SBATCH --partition=tier1q
-#SBATCH --array=1-2
+#SBATCH --array=0-2
 
 # make log directory
 mkdir -p /gpfs/data/gao-lab/people/Sihao/ad_analysis/logs
@@ -32,6 +32,6 @@ echo "Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Tissue: ${TISSUE}"
 
 # run R file
-Rscript harm_linear.R ${GWAS_FILE} ${TISSUE}
+Rscript harm_linear_all_snp.R ${GWAS_FILE} ${TISSUE}
 
 echo "Completed: ${GWAS_FILE}"

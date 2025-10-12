@@ -18,7 +18,7 @@ lookup_clean <- lookup_table %>%
 
 # define params
 chromosomes <- 1:22
-gtex_prefix <- "/gpfs/data/gao-lab/people/Sihao/data/"
+gtex_prefix <- "/gpfs/data/gao-lab/people/Sihao/data/gtex_old_files"
 output_dir <- "/gpfs/data/gao-lab/people/Sihao/data/processed_gtex/"
 for (chr in chromosomes) {
   
@@ -28,7 +28,7 @@ for (chr in chromosomes) {
                        "GTEx_Analysis_v10_QTLs-GTEx_Analysis_v10_eQTL_all_associations-",
                        tissue, ".v10.allpairs.chr", chr, ".txt.gz")
   if (!file.exists(input_file)) {
-    cat("File not found\n")
+    cat("file not found\n")
     next
   }
   
@@ -38,7 +38,7 @@ for (chr in chromosomes) {
     inner_join(lookup_clean, by = "variant_id")
   
   # save
-  output_file <- paste0(output_dir, tissue, "_chr", chr, "_with_rsid.txt.gz")
+  output_file <- paste0(output_dir, tissue, "_chr", chr, "_with_rsid_all_snp.txt.gz")
   fwrite(eqtl_with_rsid, output_file)
   cat("✓\n")
 }
