@@ -1,3 +1,4 @@
+%2FUsers%2Ffengsihao%2FAD_analysis%2Fremove_non_SNP.sh="2B5139E2"
 %2FUsers%2Ffengsihao%2FAD_analysis%2Frun_harm1.sh="DCAE51C4"
 %2FUsers%2Ffengsihao%2FAD_analysis%2Frun_harm_linear.sh="649232C6"
 %2FUsers%2Ffengsihao%2FAD_analysis%2Frun_harm_linear_all.sh="D2E3E510"
@@ -23,6 +24,7 @@
 ~%2FAD_analysis%2Fprocess_gwas.R="19FAC04B"
 ~%2FAD_analysis%2Fpt_to_txtgz.py="793A3913"
 ~%2FAD_analysis%2Fread_eqtl.R="43FB2649"
+~%2FAD_analysis%2Fremove_non_SNP.sh="56502271"
 ~%2FAD_analysis%2Frun_harm.sh.R="15F8F950"
 ~%2FAD_analysis%2Frun_harm1.sh="780298A0"
 ~%2FAD_analysis%2Frun_harm_linear.sh="AFAEEDD7"
