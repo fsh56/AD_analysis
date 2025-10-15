@@ -76,8 +76,6 @@ summary_results <- data.frame(
   egger_se = if(!inherits(egger_result, 'try-error')) egger_result@StdError.Est else NA,
   egger_pvalue = if(!inherits(egger_result, 'try-error')) egger_result@Pvalue.Est else NA,
   egger_intercept = if(!inherits(egger_result, 'try-error')) egger_result@Intercept else NA,
-  egger_intercept_se = if(!inherits(egger_result, 'try-error')) egger_result@StdError.Int else NA,
-  egger_intercept_pval = if(!inherits(egger_result, 'try-error')) egger_result@Pvalue.Int else NA,
   
   # Median
   median_beta = if(!inherits(median_result, 'try-error')) median_result@Estimate else NA,
@@ -85,9 +83,9 @@ summary_results <- data.frame(
   median_pvalue = if(!inherits(median_result, 'try-error')) median_result@Pvalue else NA,
   
   # cML
-  cml_beta = if(!inherits(cml_result, 'try-error')) cml_result@Estimate else NA,
-  cml_se = if(!inherits(cml_result, 'try-error')) cml_result@StdError else NA,
-  cml_pvalue = if(!inherits(cml_result, 'try-error')) cml_result@Pvalue else NA,
+  #cml_beta = if(!inherits(cml_result, 'try-error')) cml_result@Estimate else NA,
+  #cml_se = if(!inherits(cml_result, 'try-error')) cml_result@StdError else NA,
+  #cml_pvalue = if(!inherits(cml_result, 'try-error')) cml_result@Pvalue else NA,
   
   # heter stat
   heterogeneity_Q = het_Q,

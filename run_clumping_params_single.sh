@@ -19,7 +19,7 @@ module load plink/1.9
 # ========================================
 # LD Clumping Parameters (EDIT HERE)
 # ========================================
-CLUMP_KB=250 
+CLUMP_KB=20 
 CLUMP_R2=0.1
 CLUMP_P=0.001
 

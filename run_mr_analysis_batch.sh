@@ -2,12 +2,11 @@
 #SBATCH --job-name=mr_analysis_batch
 #SBATCH --output=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/mr_analysis_batch_%j.out
 #SBATCH --error=/gpfs/data/gao-lab/people/Sihao/ad_analysis/logs/mr_analysis_batch_%j.err
-#SBATCH --time=02:00:00
-#SBATCH --mem=8G
+#SBATCH --time=04:00:00
+#SBATCH --mem=32G
 
 INPUT_DIR="/gpfs/data/gao-lab/people/Sihao/ad_analysis/clumped_data/single_genes"
 OUTPUT_DIR="/gpfs/data/gao-lab/people/Sihao/data/mr_results_draft"
-
 R_SCRIPT="/gpfs/data/gao-lab/people/Sihao/draft/mr_analysis.R"
 
 # Create output directory
