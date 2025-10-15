@@ -38,13 +38,16 @@ results <- list()
 cat("Running MR analysis...\n")
 
 # prepare data
+gene_id <- sub(".*_(ENSG[0-9]+\\.[0-9]+)_.*", "\\1", basename(input_file))
 exposure_dat <- data.frame(
   SNP = snp_names,
   beta.exposure = b_exp,
   se.exposure = se_exp,
   effect_allele.exposure = data$alt,
   other_allele.exposure = data$ref,
-  pval.exposure = data$p_eqtl
+  pval.exposure = data$p_eqtl,
+  id.exposure = gene_id,
+  exposure = gene_id
 )
 
 outcome_dat <- data.frame(
@@ -53,7 +56,9 @@ outcome_dat <- data.frame(
   se.outcome = se_out,
   effect_allele.outcome = data$alt,
   other_allele.outcome = data$ref,
-  pval.outcome = data$p_gwas
+  pval.outcome = data$p_gwas,
+  id.outcome = "ad_gwas",
+  outcome = "AD"
 )
 
 harmonized <- suppressMessages(harmonise_data(exposure_dat, outcome_dat))

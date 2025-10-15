@@ -14,7 +14,7 @@ GENE_NAME=$(echo "$FILENAME" | grep -oP 'ENSG\d+\.\d+')
 
 # Output directory and file prefix
 OUTPUT_DIR="/gpfs/data/gao-lab/people/Sihao/data/mr_results_draft"
-OUTPUT_PREFIX="${OUTPUT_DIR}/${GENE_NAME}_mr/"
+OUTPUT_PREFIX="${OUTPUT_DIR}/${GENE_NAME}"
 
 # R script location
 R_SCRIPT="/gpfs/data/gao-lab/people/Sihao/draft/mr_analysis.R"
