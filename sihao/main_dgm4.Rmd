@@ -1,0 +1,209 @@
+---
+title: "Untitled"
+author: "Bowei Kang"
+date: "2025-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(mvtnorm)
+library(LaplacesDemon)
+library(dirmult)
+library(invgamma)
+library(MendelianRandomization)
+library(Rcpp)
+library(tictoc)
+```
+
+# load R script and functions
+
+```{r}
+source("/Users/fengsihao/Desktop/Dr.Chen/sihao/dgm4.R")
+source("/Users/fengsihao/Desktop/Dr.Chen/sihao/init_setup_seso.R")
+Rcpp::sourceCpp("/Users/fengsihao/Desktop/Dr.Chen/sihao/gibbs_seso_uhp_only.cpp")
+Rcpp::sourceCpp("/Users/fengsihao/Desktop/Dr.Chen/sihao/fastlm.cpp")
+```
+
+# sim
+
+```{r}
+out = NULL
+nrep = 100
+for (ii in 1:nrep) {
+# ii=2000+ii
+set.seed(ii)
+print(ii)
+if (ii %% 100 == 0) message(ii)
+# parameters
+m = 200
+nx = 300; ny = 20000 
+a_gamma = -0.3; b_gamma = 0.3
+a_f = 0.1; b_f = 0.3 
+a_alpha = -0.1; b_alpha = 0.1
+a_phi = -0.05; b_phi = 0.05
+# error_sd_exp = 1
+q_uhp = 1; q_chp = 0
+theta = 0
+p_cutoff = 1e-3
+# generate summary statistics
+GWAS_summary = dgm4(m, nx, ny, a_gamma, b_gamma, a_f, b_f, a_alpha, b_alpha, a_phi, b_phi, theta, q_uhp, q_chp)
+# GWAS_summary = dgm2(m, nx, ny, a_gamma, b_gamma, a_f, b_f, a_alpha, b_alpha, theta, pp=0.2)
+GWAS_summary$h2_exposure
+GWAS_summary$h2_causal
+GWAS_summary$h2_uhp
+GWAS_summary$h2_chp
+# get summary statistics 
+b_exp = c(GWAS_summary$b_exp); se_exp = c(GWAS_summary$se_exp)
+b_out = c(GWAS_summary$b_out); se_out = c(GWAS_summary$se_out)
+# select IV
+b_exp_raw = c(GWAS_summary$b_exp); se_exp_raw = c(GWAS_summary$se_exp)
+b_out_raw = c(GWAS_summary$b_out); se_out_raw = c(GWAS_summary$se_out)
+z_gamma = abs(b_exp_raw) / se_exp_raw
+p_gamma = 2*(1 - pnorm(z_gamma))
+iv_keep = p_gamma < p_cutoff
+K = sum(iv_keep)
+if (K>=5) {
+# get summary statistics after selection
+b_out = b_out_raw[iv_keep]; se_out = se_out_raw[iv_keep]
+b_exp = b_exp_raw[iv_keep]; se_exp = se_exp_raw[iv_keep]
+
+# run MR
+# FusioMR empirical
+niter = 20000
+# hyper parameters
+a_gamma_prior = a_theta_prior = max(7, K/4)
+cat("a_gamma_1", a_gamma_prior, "\n")
+cat("K/4", K/4, "\n")
+# use all SNPs before pval thresholding
+b_gamma_prior = max(1e-3, (var(b_exp_raw) - mean(se_exp_raw)^2))*(a_gamma_prior-1)
+b_theta_prior = max(1e-6, (var(b_out_raw) - mean(se_out_raw)^2))*(a_theta_prior-1)
+# starting values
+start_val = init_setup(niter, K, alpha_init = 1, beta_init = theta, sigma_gamma_init = 0.1, sigma_theta_init = 0.1)
+# rcpp
+res2 = gibbs_seso_uhp_only_cpp(
+niter, K, start_val$beta_tk, start_val$theta_tk, start_val$gamma_tk,
+start_val$sigma2_gamma_tk, start_val$sigma2_theta_tk,
+b_out, b_exp, (se_out)^2, (se_exp)^2,
+a_gamma_prior, b_gamma_prior, a_theta_prior, b_theta_prior
+)
+ids = (niter/2 + 1):niter
+bhat2 = mean(res2$beta_tk[ids], na.rm = T)
+se_bhat2 = sd(res2$beta_tk[ids], na.rm = T)
+# sigma2_gamma2 = mean(res2$sigma2_gamma_tk[ids])
+# sigma2_theta2 = mean(res2$sigma2_theta_tk[ids])
+# 1-coverage, bCI
+bci = quantile(res2$beta_tk[ids], probs=c(0.025,0.975), na.rm=T)
+# prop_neg = mean(res2$beta_tk[ids] < 0) # F_hat(0)
+# pseudo_p = 2*min(prop_neg, 1-prop_neg)
+# prop_small = mean(abs(res2$beta_tk[ids]) < se_bhat2*0.1)
+
+# FusioMR oracle
+niter = 20000
+# hyper parameters
+a_gamma_prior = a_theta_prior = max(4, K/2)
+cat("a_gamma_2", a_gamma_prior, "\n")
+cat("K/4", K/4, "\n")
+# use true variance
+b_gamma_prior = (a_gamma_prior-1)*(b_gamma-a_gamma)^2/12
+b_theta_prior = (a_theta_prior-1)*(b_alpha-a_alpha)^2/12
+# starting values
+start_val = init_setup(niter, K, alpha_init = 1, beta_init = theta, sigma_gamma_init = 0.1, sigma_theta_init = 0.1)
+# rcpp
+res2_oracle = gibbs_seso_uhp_only_cpp(
+niter, K, start_val$beta_tk, start_val$theta_tk, start_val$gamma_tk,
+start_val$sigma2_gamma_tk, start_val$sigma2_theta_tk,
+b_out, b_exp, (se_out)^2, (se_exp)^2,
+a_gamma_prior, b_gamma_prior, a_theta_prior, b_theta_prior
+)
+ids = (niter/2 + 1):niter
+bhat_oracle = mean(res2_oracle$beta_tk[ids], na.rm = T)
+se_bhat_oracle = sd(res2_oracle$beta_tk[ids], na.rm = T)
+# 1-coverage, bCI
+bci_oracle = quantile(res2_oracle$beta_tk[ids], probs=c(0.025,0.975), na.rm=T)
+
+# competing methods
+mr.obj = MendelianRandomization::mr_input(bx = b_exp, bxse = se_exp, by = b_out, byse = se_out)
+# IVW fixed
+IVW_f = MendelianRandomization::mr_ivw(mr.obj, model = 'fixed')
+b_ivw = IVW_f$Estimate; se_ivw = IVW_f$StdError
+# MR-Egger
+Egger = try(MendelianRandomization::mr_egger(mr.obj))
+if(class(Egger) != 'try-error' & !is.null(Egger)) {
+b_egger = Egger$Estimate; se_egger = Egger$StdError.Est
+} else {b_egger = se_egger = NA}
+# cML
+cml = MendelianRandomization::mr_cML(mr.obj, MA = T, DP = F, num_pert = 100, n = nx)
+b_cml = cml$Estimate; se_cml = cml$StdError
+# cML-DP
+cml_dp = MendelianRandomization::mr_cML(mr.obj, MA = T, DP = T, num_pert = 100, n = nx)
+b_cml_dp = cml_dp$Estimate; se_cml_dp = cml_dp$StdError
+# output
+tmp = c(seed = ii, K = K, s2_gamma_theo = (b_gamma-a_gamma)^2/12, s2_theta_theo = (b_alpha-a_alpha)^2/12, s2_gamma_emp = max(1e-3, (var(b_exp_raw) - mean(se_exp_raw)^2)), s2_theta_emp = max(1e-6, (var(b_out_raw)-mean(se_out_raw^2))), 
+fusio_rej_b = bci[2] < 0 | bci[1] > 0, fusio_rej_b_oracle = bci_oracle[2] < 0 | bci_oracle[1] > 0, ivw = b_ivw + 1.96*se_ivw < 0 | b_ivw - 1.96*se_ivw > 0, egger = b_egger + 1.96*se_egger < 0 | b_egger - 1.96*se_egger > 0, cml = b_cml + 1.96*se_cml < 0 | b_cml - 1.96*se_cml > 0, cml_dp = b_cml_dp + 1.96*se_cml_dp < 0 | b_cml_dp - 1.96*se_cml_dp > 0)
+out = rbind(out, tmp)
+} # end if
+} # end loop
+
+# summarize
+out = as.data.frame(out)
+colnames(out) = c('seed', 'K', 's2_gamma_theo', 's2_theta_theo', 's2_gamma_emp', 's2_theta_emp', 'fusio_emp', 'fusio_oracle', 'ivw', 'egger', 'cml', 'cml_dp')
+colMeans(out, na.rm = TRUE)
+nrow(out)
+table(out$K)
+```
+
+# merge (randi)
+
+Bowei/fusiomr_simulation
+
+```{r}
+library(data.table); library(tidyverse)
+# Function to extract parameters from filename
+extract_params = function(fname) {
+fname_base = basename(fname)
+# Use regular expressions to extract each parameter
+matches = stringr::str_match(fname_base, "m_(\\d+)_nx_(\\d+)_ny_(\\d+)_bgamma_([\\d\\.]+)_balpha_([\\d\\.]+)_theta_([\\d\\.]+)_pcut_([\\d\\.eE\\-]+)_aprior_([\\d\\.]+)_seed_(\\d+)_qchp_([\\d\\.]+)_bphi_([\\d\\.]+)\\.txt")
+if (is.na(matches[1])) stop(paste("Pattern not matched:", fname_base))
+# Return as named vector or data frame row
+return(data.frame(
+m = as.integer(matches[2]),
+nx = as.integer(matches[3]),
+ny = as.integer(matches[4]),
+bgamma = as.numeric(matches[5]),
+balpha = as.numeric(matches[6]),
+theta = as.numeric(matches[7]),
+pcut = as.numeric(matches[8]),
+aprior = as.numeric(matches[9]),
+seed = as.integer(matches[10]),
+qchp = as.numeric(matches[11]),
+bphi = as.numeric(matches[12])
+))
+}
+
+files = list.files(path = "out", pattern = ".*(_nx_20000).*.*\\.txt$", full.names = TRUE)
+tbl = NULL
+for (i in 1:length(files)) {
+print(i)
+bb = extract_params(files[i])
+# param_df = dplyr::bind_rows(lapply(files, extract_params))
+aa = fread(files[i])
+bb$n = nrow(aa)
+bb$K = median(aa$K)
+bb = unlist(c(bb, colMeans(aa %>% dplyr::select(s2_gamma_theo:cml_dp))))
+tbl = rbind(tbl, bb)
+}
+tbl
+fwrite(tbl, "summary/summary_4.txt")
+```
+
+
+
+
+
+
+
