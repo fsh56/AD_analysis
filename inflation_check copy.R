@@ -2,7 +2,7 @@ library(data.table)
 library(ggplot2)
 library(dplyr)
 
-setwd("/Users/fengsihao/AD_analysis/mr_results_combined/amyloid_Brain_Frontal_Cortex_BA9_22/")
+setwd("/Users/fengsihao/AD_analysis/amyloid_Brain_Frontal_Cortex_BA9_1.txt.gz/")
 output_dir <- "/Users/fengsihao/AD_analysis/plots/egger/"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
@@ -67,7 +67,7 @@ p2 <- ggplot(all_results, aes(x = expected, y = observed)) +
               color = "black", linewidth = 0.8) +
   geom_point(color = "#3182bd", alpha = 0.6, size = 2, shape = 1) +
   labs(
-    title = "Q-Q Plot, MR_Egger, Chr20",
+    title = "Q-Q Plot using MR_Egger",
     x = "expected -log_10(p)",
     y = "observed -log_10(p)"
   ) +

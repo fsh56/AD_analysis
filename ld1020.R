@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
-# LD clumping for harmonized data with configurable parameters
-# Usage: Rscript ld_clumping.R <input_file> <output_file> [clump_kb] [clump_r2] [clump_p]
+# LD clumping for harmonized eQTL-GWAS data with configurable parameters
 
 library(data.table)
 library(tidyverse)
@@ -9,42 +8,47 @@ library(genetics.binaRies)
 
 # Parse command line arguments
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 2) {
-  stop("Usage: Rscript ld_clumping.R <input_file> <output_file> [clump_kb] [clump_r2] [clump_p]")
+if (length(args) < 4) {
+  stop("Usage: Rscript ld_clumping_batch.R <input_file> <output_dir> <clump_kb> <clump_p>")
 }
 
 input_file <- args[1]
-output_file <- args[2]
+output_dir <- args[2]
+clump_kb_param <- as.numeric(args[3])
+clump_p_param <- as.numeric(args[4])
 
-# Set default parameters or use command line arguments
-clump_kb_param <- ifelse(length(args) >= 3, as.numeric(args[3]), 250)
-clump_r2_param <- ifelse(length(args) >= 4, as.numeric(args[4]), 0.1)
-clump_p_param <- ifelse(length(args) >= 5, as.numeric(args[5]), 0.01)
+# Fixed r2 threshold
+clump_r2_param <- 0.1
+
+# Create output directory if it doesn't exist
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
 
 # Print parameters
-cat("=== LD Clumping Parameters ===\n")
+cat("\n=== LD Clumping Parameters ===\n")
 cat("Input file:", input_file, "\n")
-cat("Output file:", output_file, "\n")
+cat("Output directory:", output_dir, "\n")
 cat("clump_kb:", clump_kb_param, "\n")
 cat("clump_r2:", clump_r2_param, "\n")
 cat("clump_p:", clump_p_param, "\n")
 cat("==============================\n\n")
 
-# LD clumping function
+# LD clumping function (from original script)
 clump <- function(dat, 
                   SNP_col = "rsid", 
                   pval_col = "p_eqtl", 
                   clump_kb = 250, 
                   clump_r2 = 0.1, 
                   clump_p = 0.01, 
-                  bfile = "/gpfs/data/gao-lab/people/Sihao/data/1kg/EUR", 
+                  bfile = "/scratch/sfeng56/data/1kg/EUR", 
                   plink_bin = genetics.binaRies::get_plink_binary(), 
                   pop = "EUR") {
   
   df <- data.frame(rsid = dat[[SNP_col]], pval = dat[[pval_col]])
   df <- df[complete.cases(df), ]
   
-  # check if there's data to clump
+  # Check if there's data to clump
   if (nrow(df) == 0) {
     cat("No valid SNPs for clumping\n")
     return(NA)
@@ -66,23 +70,28 @@ clump <- function(dat,
     return(NA)
   })
   
-  # check if clumping was successful
+  # Check if clumping was successful
   if (length(out) == 1 && is.na(out)) {
     return(NA)
   }
   
-  # return clumped data
+  # Return clumped data
   MRdat <- dat[dat[[SNP_col]] %in% out$rsid, ]
   return(MRdat)
 }
 
-# main
+# Main processing
 cat("Processing file:", input_file, "\n")
 
-# read harmonized data
+# Read harmonized data
 dat <- fread(input_file)
-
-cat("Total SNPs before clumping:", nrow(dat), "\n\n")
+cat("Total SNPs before clumping:", nrow(dat), "\n")
+cat("Unique genes:", length(unique(dat$gene_id)), "\n\n")
+output_file <- file.path(output_dir, 
+                         sprintf("clumped_w%dkb_p%s.txt", 
+                                 clump_kb_param, 
+                                 format(clump_p_param, scientific = FALSE)))
+cat("Output file:", output_file, "\n\n")
 
 # Perform LD clumping with parameters from command line
 clumped_df <- clump(dat, 
@@ -95,15 +104,16 @@ clumped_df <- clump(dat,
                     plink_bin = genetics.binaRies::get_plink_binary(),
                     pop = "EUR")
 
-# save results
+# Save results
 if (length(clumped_df) == 1 && is.na(clumped_df)) {
   cat("LD clumping failed or returned no results\n")
-  # Create empty output file to indicate completion
+  # Create output file to indicate completion
   writeLines("# LD clumping failed", output_file)
 } else {
   cat("Number of SNPs after clumping:", nrow(clumped_df), "\n")
-  fwrite(clumped_df, output_file, sep = "\t", quote = FALSE)
+  cat("Unique genes after clumping:", length(unique(clumped_df$gene_id)), "\n")
+  fwrite(clumped_df, output_file, sep = ",", quote = FALSE)
   cat("Results saved to:", output_file, "\n")
 }
 
-cat("Done!\n")
+cat("\nDone!\n")
