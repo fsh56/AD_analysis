@@ -1,0 +1,32 @@
+# count the number of unique gene_id
+(base) [sfeng56@cri22in001 harmonized_data_Brain_Amygdala]$ zcat eqtl_cogdx_ad_Brain_Amygdala_9.txt.gz | tail -n +2 | cut -d',' -f1 | sort -u | wc -l
+943
+
+# check unique gene_id example
+(base) [sfeng56@cri22in001 harmonized_data_Brain_Amygdala]$ zcat eqtl_cogdx_ad_Brain_Amygdala_9.txt.gz | awk -F',' 'NR>1{print $1}' | sort -u | head -10
+ENSG00000005238.20
+ENSG00000010438.17
+ENSG00000011454.18
+ENSG00000023318.9
+ENSG00000030304.15
+ENSG00000041982.16
+ENSG00000044459.15
+ENSG00000044574.9
+ENSG00000048828.17
+ENSG00000050555.19
+
+# count the number of SNPs per gene_id (from most to least)
+(base) [sfeng56@cri22in001 harmonized_data_Brain_Amygdala]$ zcat eqtl_cogdx_ad_Brain_Amygdala_9.txt.gz | awk -F',' 'NR>1{print $1}' | sort | uniq -c | sort -rn | head -10
+   8927 ENSG00000173253.16
+   8909 ENSG00000286684.1
+   8904 ENSG00000137038.8
+   8795 ENSG00000273056.1
+   8792 ENSG00000230207.1
+   8689 ENSG00000080503.24
+   8684 ENSG00000153707.19
+   
+#choose tail -n 100
+zcat  /gpfs/data/gao-lab/people/Sihao/data/harmonized_data_Brain_Amygdala/eqtl_cogdx_ad_Brain_Amygdala_9.txt.gz | awk -F',' 'NR>1{print $1}' | sort | uniq -c | sort -rn | tail -n 100
+
+# choose wanted position
+/gpfs/data/gao-lab/people/Sihao/data/harmonized_data_Brain_Amygdala/eqtl_cogdx_ad_Brain_Amygdala_9.txt.gz | awk -F',' 'NR>1{print $1}' | sort | uniq -c | sort -rn |sed -n '300p'

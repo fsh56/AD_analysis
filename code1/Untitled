@@ -1,0 +1,13 @@
+Rscript /scratch/sfeng56/draft/compute_F_for_eqtl.R \
+--in /scratch/sfeng56/data/harmonized_data_Brain_Frontal_Cortex_BA9/eqtl_amyloid_Brain_Frontal_Cortex_BA9_1.txt.gz \
+--out_prefix /scratch/sfeng56/ad_analysis/Fstats_BA9
+
+
+library(dplyr)
+library()
+
+/Users/fengsihao/AD_analysis
+
+Rscript /scratch/sfeng56/draft/compute_F_for_eqtl.R \
+--in /scratch/sfeng56/data/harmonized_data_Brain_Amygdala/eqtl_amyloid_Brain_Amygdala_1.txt.gz    \
+--out_prefix /scratch/sfeng56/ad_analysis/Fstats_Amygdala
