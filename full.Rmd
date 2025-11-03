@@ -1,0 +1,838 @@
+---
+title: "full_script"
+author: "Sihao Feng"
+date: "2025-10-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ld
+```{r}
+#!/usr/bin/env Rscript
+# LD per gene
+
+library(data.table)
+library(tidyverse)
+library(ieugwasr)
+library(genetics.binaRies)
+
+# Parse command line arguments
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 4) {
+  stop("Usage: Rscript ld_per_gene.R <input_file> <output_dir> <clump_kb> <clump_p>")
+}
+
+input_file <- args[1]
+output_dir <- args[2]
+clump_kb_param <- as.numeric(args[3])
+clump_p_param <- as.numeric(args[4])
+
+# Fixed r2 threshold
+clump_r2_param <- 0.1
+
+# Create output directory if it doesn't exist
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+# Print parameters
+cat("\n=== LD Clumping Parameters (Per Gene) ===\n")
+cat("Input file:", input_file, "\n")
+cat("Output directory:", output_dir, "\n")
+cat("clump_kb:", clump_kb_param, "\n")
+cat("clump_r2:", clump_r2_param, "\n")
+cat("clump_p:", clump_p_param, "\n")
+cat("==========================================\n\n")
+
+# LD clumping function (per gene)
+clump_per_gene <- function(dat, 
+                           SNP_col = "rsid", 
+                           pval_col = "p_eqtl", 
+                           clump_kb = 250, 
+                           clump_r2 = 0.1, 
+                           clump_p = 0.01, 
+                           bfile = "/scratch/sfeng56/data/1kg/EUR", 
+                           plink_bin = genetics.binaRies::get_plink_binary(), 
+                           pop = "EUR") {
+  
+  # Prepare data frame for clumping
+  df <- data.frame(rsid = dat[[SNP_col]], pval = dat[[pval_col]])
+  df <- df[complete.cases(df), ]
+  
+  # Check if there's data to clump
+  if (nrow(df) == 0) {
+    return(data.frame())  # Return empty data frame instead of NA
+  }
+  
+  # Filter by p-value threshold first
+  df <- df[df$pval <= clump_p, ]
+  
+  if (nrow(df) == 0) {
+    return(data.frame())  # No significant SNPs
+  }
+  
+  # LD clumping
+  out <- tryCatch({
+    ieugwasr::ld_clump(df, 
+                       clump_kb = clump_kb, 
+                       clump_r2 = clump_r2, 
+                       clump_p = clump_p, 
+                       bfile = bfile, 
+                       plink_bin = plink_bin, 
+                       pop = pop)
+  }, error = function(e) {
+    return(NULL)
+  })
+  
+  # Check if clumping was successful
+  if (is.null(out) || nrow(out) == 0) {
+    return(data.frame())
+  }
+  
+  # Return clumped data
+  MRdat <- dat[dat[[SNP_col]] %in% out$rsid, ]
+  return(MRdat)
+}
+
+# Main processing
+cat("Processing file:", input_file, "\n")
+
+# Read harmonized data
+dat <- fread(input_file)
+cat("Total SNPs before clumping:", nrow(dat), "\n")
+cat("Unique genes:", length(unique(dat$gene_id)), "\n\n")
+
+# Get list of unique genes
+gene_list <- unique(dat$gene_id)
+cat("Starting per-gene clumping for", length(gene_list), "genes...\n\n")
+
+# Initialize results list
+all_clumped <- list()
+
+# Process each gene separately
+for (i in seq_along(gene_list)) {
+  gene <- gene_list[i]
+  
+  # Progress indicator
+  if (i %% 100 == 0) {
+    cat(sprintf("Processed %d / %d genes (%.1f%%)\n", 
+                i, length(gene_list), 100 * i / length(gene_list)))
+  }
+  
+  # Extract data for this gene
+  gene_dat <- dat[dat$gene_id == gene, ]
+  
+  # Skip if no data
+  if (nrow(gene_dat) == 0) {
+    next
+  }
+  
+  # Perform clumping for this gene
+  gene_clumped <- clump_per_gene(gene_dat, 
+                                 SNP_col = "rsid", 
+                                 pval_col = "p_eqtl", 
+                                 clump_kb = clump_kb_param, 
+                                 clump_r2 = clump_r2_param, 
+                                 clump_p = clump_p_param, 
+                                 bfile = "/scratch/sfeng56/data/1kg/EUR", 
+                                 plink_bin = genetics.binaRies::get_plink_binary(),
+                                 pop = "EUR")
+  
+  # Store results if not empty
+  if (nrow(gene_clumped) > 0) {
+    all_clumped[[gene]] <- gene_clumped
+  }
+}
+
+cat("\nClumping completed for all genes!\n\n")
+
+# Combine all clumped results
+if (length(all_clumped) > 0) {
+  clumped_df <- do.call(rbind, all_clumped)
+  
+  # Add summary statistics per gene
+  gene_summary <- clumped_df %>%
+    group_by(gene_id) %>%
+    summarise(
+      n_snps = n(),
+      min_pval = min(p_eqtl, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  # Print summary
+  cat("=== Clumping Summary ===\n")
+  cat("Total SNPs after clumping:", nrow(clumped_df), "\n")
+  cat("Genes with clumped SNPs:", length(unique(clumped_df$gene_id)), "\n")
+  cat("Genes with no SNPs after clumping:", 
+      length(gene_list) - length(unique(clumped_df$gene_id)), "\n")
+  cat("\nSNPs per gene statistics:\n")
+  print(summary(gene_summary$n_snps))
+  
+  # Save main results
+  output_file <- file.path(output_dir, 
+                           sprintf("BA9_clumped_w%dkb_p%s.txt", 
+                                   clump_kb_param, 
+                                   format(clump_p_param, scientific = FALSE)))
+  
+  fwrite(clumped_df, output_file, sep = ",", quote = FALSE)
+  cat("\nMain results saved to:", output_file, "\n")
+  
+  # Save gene summary
+  summary_file <- file.path(output_dir, 
+                            sprintf("BA9_gene_summary_w%dkb_p%s.txt", 
+                                    clump_kb_param, 
+                                    format(clump_p_param, scientific = FALSE)))
+  
+  fwrite(gene_summary, summary_file, sep = "\t", quote = FALSE)
+  cat("Gene summary saved to:", summary_file, "\n")
+  
+  # Save detailed log
+  log_file <- file.path(output_dir, 
+                        sprintf("BA9_clumping_log_w%dkb_p%s.txt", 
+                                clump_kb_param, 
+                                format(clump_p_param, scientific = FALSE)))
+  
+  log_content <- c(
+    "=== LD Clumping Log (Per Gene) ===",
+    paste("Date:", Sys.time()),
+    paste("Input file:", input_file),
+    paste("clump_kb:", clump_kb_param),
+    paste("clump_r2:", clump_r2_param),
+    paste("clump_p:", clump_p_param),
+    "",
+    "=== Summary Statistics ===",
+    paste("Total genes in input:", length(gene_list)),
+    paste("Genes with significant eQTLs (p <", clump_p_param, "):", 
+          length(unique(clumped_df$gene_id))),
+    paste("Total SNPs before clumping:", nrow(dat)),
+    paste("Total SNPs after clumping:", nrow(clumped_df)),
+    paste("Reduction rate:", 
+          sprintf("%.1f%%", 100 * (1 - nrow(clumped_df) / nrow(dat)))),
+    "",
+    "=== SNPs per Gene Distribution ===",
+    capture.output(print(summary(gene_summary$n_snps))),
+    "",
+    "=== Genes with Most SNPs (Top 10) ===",
+    capture.output(print(head(gene_summary[order(-gene_summary$n_snps), ], 10)))
+  )
+  
+  writeLines(log_content, log_file)
+  cat("Detailed log saved to:", log_file, "\n")
+  
+} else {
+  cat("No SNPs passed clumping for any gene\n")
+  
+  # Create empty output file to indicate completion
+  output_file <- file.path(output_dir, 
+                           sprintf("clumped_w%dkb_p%s.txt", 
+                                   clump_kb_param, 
+                                   format(clump_p_param, scientific = FALSE)))
+  writeLines("# No SNPs passed clumping", output_file)
+}
+
+cat("\n=== Process Completed ===\n")
+cat("Done!\n")
+```
+
+#!/bin/bash
+#SBATCH --job-name=ld_pergene2
+#SBATCH --output=/scratch/sfeng56/logs/ld_ba9_chr3.out
+#SBATCH --error=/scratch/sfeng56/logs/ld_ba9_chr3.err
+#SBATCH --time=4:00:00
+#SBATCH --mem=8G
+
+# Load required modules
+module load gcc/12.1.0
+module load R/4.5.1
+module load lapack/3.11.0
+module load atlas/3.10.3
+module load plink/1.9
+
+# Set variables
+INPUT_FILE="/gpfs/data/gao-lab/people/Sihao/data/harmonized_data_Brain_Frontal_Cortex_BA9/eqtl_amyloid_Brain_Frontal_Cortex_BA9_3.txt.gz"
+OUTPUT_DIR="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/ldByGene3"
+R_SCRIPT="/scratch/sfeng56/draft/ld_per_gene.R"
+LOG_DIR="/scratch/sfeng56/logs"
+
+# Create directories if they don't exist
+mkdir -p ${OUTPUT_DIR}
+mkdir -p ${LOG_DIR}
+
+# Define parameter combinations
+# Format: "WINDOW_KB P_VALUE"
+PARAMS=(
+    "50 0.005"
+    "50 0.001"
+)
+
+# Get parameters for this array job
+PARAM_INDEX=$((SLURM_ARRAY_TASK_ID - 1))
+PARAM_SET=${PARAMS[$PARAM_INDEX]}
+WINDOW_KB=$(echo $PARAM_SET | awk '{print $1}')
+PVAL=$(echo $PARAM_SET | awk '{print $2}')
+
+echo "=================================================="
+echo "LD Clumping Job Started (Per Gene Mode)"
+echo "Job ID: ${SLURM_JOB_ID}"
+echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
+echo "Date: $(date)"
+echo "=================================================="
+echo ""
+echo "Parameters:"
+echo "  Window size: ${WINDOW_KB} kb"
+echo "  P-value threshold: ${PVAL}"
+echo "  R2 threshold: 0.1 (fixed)"
+echo "  Mode: Per-gene clumping"
+echo ""
+
+# Check if input file exists
+if [ ! -f "${INPUT_FILE}" ]; then
+    echo "ERROR: Input file not found: ${INPUT_FILE}"
+    exit 1
+fi
+
+# Check if R script exists
+if [ ! -f "${R_SCRIPT}" ]; then
+    echo "ERROR: R script not found: ${R_SCRIPT}"
+    exit 1
+fi
+
+echo "Starting per-gene LD clumping..."
+echo "Start time: $(date)"
+echo ""
+
+# Run R script
+Rscript ${R_SCRIPT} ${INPUT_FILE} ${OUTPUT_DIR} ${WINDOW_KB} ${PVAL}
+
+# Check if successful
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "SUCCESS: Completed for Window=${WINDOW_KB}kb, P-value=${PVAL}"
+    
+    # Print output file info
+    OUTPUT_FILE="${OUTPUT_DIR}/BA9_clumped_w${WINDOW_KB}kb_p${PVAL}.txt"
+    SUMMARY_FILE="${OUTPUT_DIR}/BA9_gene_summary_w${WINDOW_KB}kb_p${PVAL}.txt"
+    LOG_FILE="${OUTPUT_DIR}/BA9_clumping_log_w${WINDOW_KB}kb_p${PVAL}.txt"
+    
+    if [ -f "${OUTPUT_FILE}" ]; then
+        LINE_COUNT=$(wc -l < ${OUTPUT_FILE})
+        FILE_SIZE=$(du -h ${OUTPUT_FILE} | cut -f1)
+        echo "Main output file: ${OUTPUT_FILE}"
+        echo "  File size: ${FILE_SIZE}"
+        echo "  Number of lines: ${LINE_COUNT}"
+    fi
+    
+    if [ -f "${SUMMARY_FILE}" ]; then
+        LINE_COUNT=$(wc -l < ${SUMMARY_FILE})
+        echo "Gene summary file: ${SUMMARY_FILE}"
+        echo "  Number of genes: $((LINE_COUNT - 1))"
+    fi
+    
+    if [ -f "${LOG_FILE}" ]; then
+        echo "Log file: ${LOG_FILE}"
+        echo ""
+        echo "=== Preview of Results ==="
+        head -20 ${LOG_FILE}
+    fi
+else
+    echo ""
+    echo "ERROR: Failed for Window=${WINDOW_KB}kb, P-value=${PVAL}"
+    exit 1
+fi
+
+echo ""
+echo "End time: $(date)"
+echo "=================================================="
+
+# mr_analysis
+```{r}
+#!/usr/bin/env Rscript
+# =============================================================================
+# MR Analysis for BA9 Clumped Data
+# Methods: IVW, MR-Egger, Weighted Median
+# Input: Chromosome-specific clumped data
+# Output: Method-specific results in the same directory as input
+# =============================================================================
+
+# Load required packages
+suppressPackageStartupMessages({
+  library(MendelianRandomization)
+  library(data.table)
+  library(dplyr)
+})
+
+# Parse command line arguments
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 2) {
+  stop("Usage: Rscript mr_analysis_ba9.R <chromosome_number> <base_dir>
+       Example: Rscript mr_analysis_ba9.R 1 /gpfs/data/gao-lab/people/Sihao/amyloid_ba9")
+}
+
+chr <- as.integer(args[1])
+base_dir <- args[2]
+
+# =============================================================================
+# Setup paths
+# =============================================================================
+input_dir <- file.path(base_dir, paste0("ldByGene", chr))
+input_file <- file.path(input_dir, "BA9_clumped_w50kb_p0.001.txt")
+
+# Output will be saved in the same directory as input
+output_dir <- input_dir
+
+# Log header
+cat("\n")
+cat(rep("=", 80), "\n", sep = "")
+cat("MR ANALYSIS FOR CHROMOSOME", chr, "\n")
+cat(rep("=", 80), "\n", sep = "")
+cat("Input file:", input_file, "\n")
+cat("Output directory:", output_dir, "\n")
+cat(rep("=", 80), "\n\n", sep = "")
+
+# =============================================================================
+# Read and validate data
+# =============================================================================
+if (!file.exists(input_file)) {
+  stop("Input file not found: ", input_file)
+}
+
+cat("Reading clumped data...\n")
+data <- fread(input_file)
+cat("Total rows loaded:", nrow(data), "\n")
+
+# Check required columns
+required_cols <- c("gene_id", "rsid", "b_eqtl", "se_eqtl", "b_gwas", "se_gwas")
+missing_cols <- setdiff(required_cols, colnames(data))
+if (length(missing_cols) > 0) {
+  stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+}
+
+# Get unique genes
+unique_genes <- unique(data$gene_id)
+cat("Number of unique genes:", length(unique_genes), "\n")
+cat(rep("-", 80), "\n\n", sep = "")
+
+# =============================================================================
+# Initialize result storage
+# =============================================================================
+all_ivw_results <- list()
+all_egger_results <- list()
+all_wm_results <- list()
+
+# =============================================================================
+# Main MR analysis loop
+# =============================================================================
+cat("Starting MR analysis...\n\n")
+
+for (i in seq_along(unique_genes)) {
+  gene <- unique_genes[i]
+  
+  # Progress indicator
+  if (i %% 50 == 0) {
+    cat(sprintf("[%s] Progress: %d/%d genes (%.1f%%)\n", 
+                Sys.time(), i, length(unique_genes), 100*i/length(unique_genes)))
+  }
+  
+  # Extract gene-specific data
+  gene_data <- data[gene_id == gene]
+  n_snps <- nrow(gene_data)
+  
+  # Skip if too few SNPs (need at least 3 for MR-Egger)
+  if (n_snps < 3) {
+    next
+  }
+  
+  # Prepare MR input data
+  b_exp <- gene_data$b_eqtl
+  se_exp <- gene_data$se_eqtl
+  b_out <- gene_data$b_gwas
+  se_out <- gene_data$se_gwas
+  snp_names <- gene_data$rsid
+  
+  # Create MR object
+  mr_object <- try(MendelianRandomization::mr_input(
+    bx = b_exp,
+    bxse = se_exp,
+    by = b_out,
+    byse = se_out,
+    snps = snp_names
+  ), silent = TRUE)
+  
+  if (inherits(mr_object, 'try-error')) {
+    next
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Method 1: Inverse Variance Weighted (IVW)
+  # ---------------------------------------------------------------------------
+  ivw_result <- try(mr_ivw(mr_object), silent = TRUE)
+  if (!inherits(ivw_result, 'try-error')) {
+    # Calculate heterogeneity statistics
+    het_Q <- ivw_result@Heter.Stat[1]
+    het_df <- ivw_result@Heter.Stat[2]
+    het_pval <- pchisq(het_Q, het_df, lower.tail = FALSE)
+    het_I2 <- max(0, (het_Q - het_df) / het_Q)
+    
+    all_ivw_results[[length(all_ivw_results) + 1]] <- data.frame(
+      gene_id = gene,
+      chr = chr,
+      method = "IVW",
+      n_snps = n_snps,
+      beta = ivw_result@Estimate,
+      se = ivw_result@StdError,
+      pvalue = ivw_result@Pvalue,
+      heterogeneity_Q = het_Q,
+      heterogeneity_Q_df = het_df,
+      heterogeneity_Q_pval = het_pval,
+      heterogeneity_I2 = het_I2,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Method 2: MR-Egger
+  # ---------------------------------------------------------------------------
+  egger_result <- try(mr_egger(mr_object), silent = TRUE)
+  if (!inherits(egger_result, 'try-error')) {
+    all_egger_results[[length(all_egger_results) + 1]] <- data.frame(
+      gene_id = gene,
+      chr = chr,
+      method = "MR-Egger",
+      n_snps = n_snps,
+      beta = egger_result@Estimate,
+      se = egger_result@StdError.Est,
+      pvalue = egger_result@Pvalue.Est,
+      intercept = egger_result@Intercept,
+      intercept_se = egger_result@StdError.Int,
+      intercept_pvalue = egger_result@Pvalue.Int,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Method 3: Weighted Median
+  # ---------------------------------------------------------------------------
+  wm_result <- try(mr_median(mr_object, weighting = "weighted", iterations = 10000), 
+                   silent = TRUE)
+  if (!inherits(wm_result, 'try-error')) {
+    all_wm_results[[length(all_wm_results) + 1]] <- data.frame(
+      gene_id = gene,
+      chr = chr,
+      method = "Weighted Median",
+      n_snps = n_snps,
+      beta = wm_result@Estimate,
+      se = wm_result@StdError,
+      pvalue = wm_result@Pvalue,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Memory management
+  rm(gene_data, b_exp, se_exp, b_out, se_out, snp_names, mr_object)
+  if (exists("ivw_result")) rm(ivw_result)
+  if (exists("egger_result")) rm(egger_result)
+  if (exists("wm_result")) rm(wm_result)
+  
+  # Periodic garbage collection
+  if (i %% 100 == 0) {
+    gc(verbose = FALSE)
+  }
+}
+
+# =============================================================================
+# Save results
+# =============================================================================
+cat("\n")
+cat(rep("=", 80), "\n", sep = "")
+cat("SAVING RESULTS\n")
+cat(rep("=", 80), "\n", sep = "")
+
+# Save IVW results
+if (length(all_ivw_results) > 0) {
+  ivw_combined <- do.call(rbind, all_ivw_results)
+  output_file <- file.path(output_dir, paste0("BA9_chr", chr, "_IVW_results.csv"))
+  fwrite(ivw_combined, output_file)
+  cat("✓ IVW results saved:", output_file, "\n")
+  cat("  Total genes analyzed:", nrow(ivw_combined), "\n")
+  cat("  Significant genes (p < 0.05):", sum(ivw_combined$pvalue < 0.05, na.rm = TRUE), "\n\n")
+} else {
+  cat("✗ No IVW results to save\n\n")
+}
+
+# Save MR-Egger results
+if (length(all_egger_results) > 0) {
+  egger_combined <- do.call(rbind, all_egger_results)
+  output_file <- file.path(output_dir, paste0("BA9_chr", chr, "_Egger_results.csv"))
+  fwrite(egger_combined, output_file)
+  cat("✓ MR-Egger results saved:", output_file, "\n")
+  cat("  Total genes analyzed:", nrow(egger_combined), "\n")
+  cat("  Significant genes (p < 0.05):", sum(egger_combined$pvalue < 0.05, na.rm = TRUE), "\n")
+  cat("  Significant intercept (p < 0.05):", 
+      sum(egger_combined$intercept_pvalue < 0.05, na.rm = TRUE), "\n\n")
+} else {
+  cat("✗ No MR-Egger results to save\n\n")
+}
+
+# Save Weighted Median results
+if (length(all_wm_results) > 0) {
+  wm_combined <- do.call(rbind, all_wm_results)
+  output_file <- file.path(output_dir, paste0("BA9_chr", chr, "_WeightedMedian_results.csv"))
+  fwrite(wm_combined, output_file)
+  cat("✓ Weighted Median results saved:", output_file, "\n")
+  cat("  Total genes analyzed:", nrow(wm_combined), "\n")
+  cat("  Significant genes (p < 0.05):", sum(wm_combined$pvalue < 0.05, na.rm = TRUE), "\n\n")
+} else {
+  cat("✗ No Weighted Median results to save\n\n")
+}
+
+# =============================================================================
+# Summary statistics
+# =============================================================================
+cat(rep("=", 80), "\n", sep = "")
+cat("ANALYSIS COMPLETE FOR CHROMOSOME", chr, "\n")
+cat(rep("=", 80), "\n", sep = "")
+cat("Total genes in input:", length(unique_genes), "\n")
+cat("Genes with IVW results:", length(all_ivw_results), "\n")
+cat("Genes with MR-Egger results:", length(all_egger_results), "\n")
+cat("Genes with Weighted Median results:", length(all_wm_results), "\n")
+cat(rep("=", 80), "\n\n", sep = "")
+
+# Final cleanup
+rm(data, unique_genes, all_ivw_results, all_egger_results, all_wm_results)
+gc(verbose = FALSE)
+```
+
+#!/bin/bash
+#SBATCH --job-name=MRba9
+#SBATCH --output=/scratch/sfeng56/logs/MR_BA9_chr%a.out
+#SBATCH --error=/scratch/sfeng56/logs/MR_BA9_chr%a.err
+#SBATCH --array=1-22
+#SBATCH --time=4:00:00
+#SBATCH --mem=16G
+
+# =============================================================================
+# Shell Script for Running MR Analysis on All Chromosomes
+# =============================================================================
+# This script submits array jobs for chromosomes 1-22
+# Each chromosome is processed independently in parallel
+# =============================================================================
+
+
+BASE_DIR="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9"
+R_SCRIPT="/scratch/sfeng56/draft/mr_analysis_ba9.R"
+
+# Load R module (adjust based on your system)
+module load gcc/12.1.0
+module load R/4.5.1
+
+# Get chromosome number from SLURM array task ID
+CHR=${SLURM_ARRAY_TASK_ID}
+
+# Print job information
+echo "=========================================="
+echo "Job ID: ${SLURM_JOB_ID}"
+echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
+echo "Chromosome: ${CHR}"
+echo "Start Time: $(date)"
+echo "=========================================="
+echo ""
+
+# Check if input file exists
+INPUT_FILE="${BASE_DIR}/ldByGene${CHR}/BA9_clumped_w50kb_p0.001.txt"
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "ERROR: Input file not found: $INPUT_FILE"
+    exit 1
+fi
+
+echo "Input file found: $INPUT_FILE"
+echo ""
+
+# Run the R script
+echo "Starting MR analysis for chromosome ${CHR}..."
+Rscript ${R_SCRIPT} ${CHR} ${BASE_DIR}
+
+# Check exit status
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo "SUCCESS: Chromosome ${CHR} completed"
+    echo "End Time: $(date)"
+    echo "=========================================="
+else
+    echo ""
+    echo "=========================================="
+    echo "ERROR: Chromosome ${CHR} failed"
+    echo "End Time: $(date)"
+    echo "=========================================="
+    exit 1
+fi
+
+# add chr
+#!/bin/bash
+# 基础路径
+base_dir="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9"
+
+# 遍历 1 到 22 号染色体
+for chr in {1..22}; do
+    # 输入文件路径
+    infile="${base_dir}/ldByGene${chr}/BA9_gene_summary_w50kb_p0.001.txt"
+    # 输出文件路径（添加了新列）
+    outfile="${base_dir}/ldByGene${chr}/BA9_gene_summary_w50kb_p0.001_chr.txt"
+
+    # 确保输入文件存在
+    if [[ -f "$infile" ]]; then
+        echo "Processing chromosome ${chr}..."
+        # 用 awk 添加新列 chr
+        awk -v chr="$chr" 'NR==1 {print $0"\tchr"} NR>1 {print $0"\t"chr}' "$infile" > "$outfile"
+    else
+        echo "Warning: $infile not found, skipping."
+    fi
+done
+
+echo "✅ Done! Files with '_chr.txt' suffix contain the new column."
+
+# merge
+#!/bin/bash
+# 基础路径
+base_dir="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9"
+out_dir="${base_dir}/gene_info"
+out_file="${out_dir}/BA9_gene_summary_w50kb_p0.001_all.txt"
+
+# 逐个合并文件
+for chr in {1..22}; do
+    infile="${base_dir}/ldByGene${chr}/BA9_gene_summary_w50kb_p0.001_chr.txt"
+    
+    if [[ -f "$infile" ]]; then
+        echo "Merging chromosome ${chr}..."
+        if [[ $chr -eq 1 ]]; then
+            # 第一个文件保留表头
+            cat "$infile" > "$out_file"
+        else
+            # 之后的文件去掉表头再追加
+            tail -n +2 "$infile" >> "$out_file"
+        fi
+    else
+        echo "Warning: $infile not found, skipping."
+    fi
+done
+
+echo "✅ Merge complete! Output saved to:"
+echo "$out_file"
+
+# plot dist of nsnps
+```{r}
+#!/usr/bin/env Rscript
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+setwd("/Users/fengsihao/AD_analysis")
+input_file  <- "BA9_gene_summary_w50kb_p0.001_all.txt"
+output_file <- "nsnps_distribution_by_chr.png"
+# Set file paths
+#input_file <- "/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/gene_info/BA9_gene_summary_w50kb_p0.001_all.txt"
+#output_file <- "/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/gene_info/gene_summary_table.csv"
+
+dat <- fread(input_file)
+stopifnot(all(c("chr","n_snps") %in% names(dat)))
+
+gene_counts <- dat %>%
+  group_by(chr) %>% summarise(n_gene = n(), .groups = "drop") %>%
+  right_join(tibble::tibble(chr = 1:22), by = "chr") %>%
+  mutate(n_gene = tidyr::replace_na(n_gene, 0)) %>%
+  arrange(chr)
+
+dat <- dat %>%
+  mutate(chr = as.integer(chr)) %>%
+  left_join(gene_counts, by = "chr") %>%
+  mutate(chr_label = paste0("chr", chr, "\n(n=", n_gene, ")"))
+
+levels_chr <- paste0("chr", gene_counts$chr, "\n(n=", gene_counts$n_gene, ")")
+dat$chr_label <- factor(dat$chr_label, levels = levels_chr)
+
+chr_means <- dat %>%
+  group_by(chr_label) %>%
+  summarise(mean_n_snps = mean(n_snps, na.rm = TRUE), .groups = "drop")
+
+colors_22 <- c("#E6B3CC", "#B3D9E6", "#CCE6B3", "#E6CCB3",
+               "#D9B3E6", "#B3E6CC", "#E6D9B3", "#CCB3E6",
+               "#B3CCE6", "#E6E6B3", "#E6B3D9", "#B3E6D9",
+               "#D9E6B3", "#E6D9CC", "#CCB3D9", "#D9CCE6",
+               "#B3D9CC", "#CCE6D9", "#E6CCE6", "#D9E6CC",
+               "#CCE6E6", "#E6CCD9")
+
+p <- ggplot(dat, aes(x = chr_label, y = n_snps, fill = chr_label, color = chr_label)) +
+  geom_jitter(width = 0.15, size = 0.8, alpha = 0.6, show.legend = FALSE) +
+  geom_boxplot(width = 0.22, alpha = 0.85, outlier.shape = NA, color = "black", show.legend = FALSE) +
+  geom_point(data = chr_means, aes(y = mean_n_snps), inherit.aes = FALSE,
+             x = chr_means$chr_label, color = "red", size = 2, shape = 16) +
+  labs(x = "", y = "n_snps",
+       title = "Distribution of SNPs per Gene across Chromosomes") +
+  theme_classic() +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y  = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    plot.title   = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = colors_22, drop = FALSE) +
+  scale_color_manual(values = colors_22, drop = FALSE)
+
+ggsave(output_file, plot = p, width = 14, height = 6, dpi = 300)
+cat("Saved:", output_file, "\n")
+```
+
+# generate gene summary table
+```{r}
+#!/usr/bin/env Rscript
+# Generate gene summary table by chromosome
+
+library(data.table)
+library(dplyr)
+
+# Set file paths
+setwd("/Users/fengsihao/AD_analysis")
+input_file  <- "BA9_gene_summary_w50kb_p0.001_all.txt"
+output_file <- "gene_summary_table.csv"
+#input_file <- "/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/gene_info/BA9_gene_summary_w50kb_p0.001_all.txt"
+#output_file <- "/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/gene_info/gene_summary_table.csv"
+
+# Read the data
+cat("Reading data from:", input_file, "\n")
+dat <- fread(input_file)
+
+# Check if required columns exist
+if (!"chr" %in% colnames(dat)) {
+  stop("ERROR: Column 'chr' not found in the input file")
+}
+if (!"n_snps" %in% colnames(dat)) {
+  stop("ERROR: Column 'n_snps' not found in the input file")
+}
+
+# Generate summary table by chromosome
+cat("Generating summary statistics by chromosome...\n")
+
+summary_table <- dat %>%
+  group_by(chr) %>%
+  summarise(
+    min_n_snps = min(n_snps, na.rm = TRUE),
+    max_n_snps = max(n_snps, na.rm = TRUE),
+    median_n_snps = median(n_snps, na.rm = TRUE),
+    mean_n_snps = mean(n_snps, na.rm = TRUE),
+    total_gene_num = n(),
+    pct_lt_3 = sum(n_snps < 3) / n() * 100,
+    .groups = 'drop'
+  ) %>%
+  arrange(chr)
+
+# Save to CSV
+cat("\nSaving results to:", output_file, "\n")
+fwrite(summary_table, output_file, sep = ",")
+cat("\nDone!\n")
+```
+

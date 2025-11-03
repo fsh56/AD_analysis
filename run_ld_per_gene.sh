@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=ld_pergene
-#SBATCH --output=/scratch/sfeng56/logs/ld_pergene_ba9_%A_%a.out
-#SBATCH --error=/scratch/sfeng56/logs/ld_pergene_ba9_%A_%a.err
+#SBATCH --job-name=ld_pergene2
+#SBATCH --output=/scratch/sfeng56/logs/ld_ba9_chr3.out
+#SBATCH --error=/scratch/sfeng56/logs/ld_ba9_chr3.err
 #SBATCH --time=4:00:00
 #SBATCH --mem=16G
 
@@ -13,8 +13,8 @@ module load atlas/3.10.3
 module load plink/1.9
 
 # Set variables
-INPUT_FILE="/gpfs/data/gao-lab/people/Sihao/data/harmonized_data_Brain_Frontal_Cortex_BA9/eqtl_amyloid_Brain_Frontal_Cortex_BA9_1.txt.gz"
-OUTPUT_DIR="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/ldByGene"
+INPUT_FILE="/gpfs/data/gao-lab/people/Sihao/data/harmonized_data_Brain_Frontal_Cortex_BA9/eqtl_amyloid_Brain_Frontal_Cortex_BA9_3.txt.gz"
+OUTPUT_DIR="/gpfs/data/gao-lab/people/Sihao/amyloid_ba9/ldByGene3"
 R_SCRIPT="/scratch/sfeng56/draft/ld_per_gene.R"
 LOG_DIR="/scratch/sfeng56/logs"
 
@@ -25,7 +25,7 @@ mkdir -p ${LOG_DIR}
 # Define parameter combinations
 # Format: "WINDOW_KB P_VALUE"
 PARAMS=(
-    "50 0.0005"
+    "50 0.005"
     "50 0.001"
 )
 

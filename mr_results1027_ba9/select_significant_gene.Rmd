@@ -1,0 +1,146 @@
+---
+title: "Untitled"
+author: "Sihao Feng"
+date: "2025-10-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# generate summary tables
+```{r}
+library(dplyr)
+
+setwd("/Users/fengsihao/AD_analysis/mr_results1027")
+ivw <- read.csv("amyloid_BA9_IVW_results_all.csv")
+egger <- read.csv("amyloid_BA9_Egger_results_all.csv")
+wm <- read.csv("amyloid_BA9_WeightedMedian_results_all.csv")
+
+# 设置显著性阈值
+p_threshold <- 0.05/nrow(ivw)  # 可以改成 0.05/nrow(ivw) 做Bonferroni校正
+# 过滤显著结果 (n_snps > 3 且 p < threshold)
+ivw_sig <- ivw %>% 
+  filter(pvalue < p_threshold) %>%
+  arrange(pvalue) %>%
+  select(gene_id, pvalue, beta, se, chr, n_snps)
+
+egger_sig <- egger %>% 
+  filter(pvalue < p_threshold) %>%
+  arrange(pvalue) %>%
+  select(gene_id, pvalue, beta, se, chr, n_snps)
+
+wm_sig <- wm %>% 
+  filter(pvalue < p_threshold) %>%
+  arrange(pvalue) %>%
+  select(gene_id, pvalue, beta, se, chr, n_snps)
+
+# 保存显著基因列表
+write.csv(ivw_sig, "significant_genes_IVW.csv", row.names = FALSE)
+write.csv(egger_sig, "significant_genes_Egger.csv", row.names = FALSE)
+write.csv(wm_sig, "significant_genes_WM.csv", row.names = FALSE)
+
+# 提取基因名单独保存
+write.table(ivw_sig$gene_id, "significant_genes_IVW_list.txt", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(egger_sig$gene_id, "significant_genes_Egger_list.txt", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(wm_sig$gene_id, "significant_genes_WM_list.txt", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+# 打印统计信息
+cat("显著基因数量:\n")
+cat("IVW:", nrow(ivw_sig), "个基因\n")
+cat("Egger:", nrow(egger_sig), "个基因\n")
+cat("WM:", nrow(wm_sig), "个基因\n\n")
+
+# 找出三种方法共同的显著基因
+common_genes <- Reduce(intersect, list(ivw_sig$gene, egger_sig$gene, wm_sig$gene))
+cat("三种方法共同显著的基因:", length(common_genes), "个\n")
+if(length(common_genes) > 0) {
+  write.table(common_genes, "significant_genes_common.txt", 
+              row.names = FALSE, col.names = FALSE, quote = FALSE)
+  print(common_genes)
+}
+
+# 至少两种方法显著的基因
+at_least_two <- unique(c(
+  intersect(ivw_sig$gene, egger_sig$gene),
+  intersect(ivw_sig$gene, wm_sig$gene),
+  intersect(egger_sig$gene, wm_sig$gene)
+))
+cat("\n至少两种方法显著的基因:", length(at_least_two), "个\n")
+write.table(at_least_two, "significant_genes_at_least_two.txt", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+# venn plot
+```{r}
+library(dplyr)
+library(ggplot2)
+library(VennDiagram)
+
+setwd("/Users/fengsihao/AD_analysis/mr_results1027")
+
+# 读取数据
+ivw <- read.csv("amyloid_BA9_IVW_results_all.csv")
+egger <- read.csv("amyloid_BA9_Egger_results_all.csv")
+wm <- read.csv("amyloid_BA9_WeightedMedian_results_all.csv")
+
+# 设置显著性阈值
+p_threshold <- 0.05/nrow(ivw)
+
+# 获取显著基因列表
+ivw_genes <- ivw %>% 
+  filter(pvalue < p_threshold) %>%
+  pull(gene_id)
+
+egger_genes <- egger %>% 
+  filter(pvalue < p_threshold) %>%
+  pull(gene_id)
+
+wm_genes <- wm %>% 
+  filter(pvalue < p_threshold) %>%
+  pull(gene_id)
+
+# 创建韦恩图
+venn.plot <- venn.diagram(
+  x = list(
+    IVW = ivw_genes,
+    Egger = egger_genes,
+    WeightedMedian = wm_genes
+  ),
+  filename = NULL,
+  col = "black",
+  fill = c("#4A90E2", "#E27D60", "#85C88A"),
+  alpha = 0.5,
+  cex = 1.5,
+  fontfamily = "sans",
+  cat.cex = 1.5,
+  cat.default.pos = "outer",
+  cat.dist = c(0.05, 0.05, 0.05),
+  main = "Significant Genes",
+  main.cex = 2
+)
+
+# 保存韦恩图
+png("venn_diagram_significant_genes.png", width = 2400, height = 2400, res = 300)
+grid.draw(venn.plot)
+dev.off()
+
+# 打印详细统计
+cat("=== 显著基因统计 ===\n")
+cat("IVW:", length(ivw_genes), "个基因\n")
+cat("Egger:", length(egger_genes), "个基因\n")
+cat("WM:", length(wm_genes), "个基因\n\n")
+
+# 计算重叠
+cat("=== 重叠统计 ===\n")
+cat("IVW ∩ Egger:", length(intersect(ivw_genes, egger_genes)), "个\n")
+cat("IVW ∩ WM:", length(intersect(ivw_genes, wm_genes)), "个\n")
+cat("Egger ∩ WM:", length(intersect(egger_genes, wm_genes)), "个\n")
+cat("三者共同:", length(Reduce(intersect, list(ivw_genes, egger_genes, wm_genes))), "个\n")
+
+```
+
