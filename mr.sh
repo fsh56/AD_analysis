@@ -19,7 +19,7 @@ module load R/4.5.1
 
 # ==================== CONFIGURATION ====================
 # MODIFY THIS SECTION FOR EACH GWAS
-GWAS_NAME="cogdx_ad"  # Change this for each GWAS submission
+GWAS_NAME="amyloid"  # Change this for each GWAS submission
 # =======================================================
 
 # Fixed parameters
@@ -159,3 +159,4 @@ fi
 echo ""
 echo "End time: $(date)"
 echo "=========================================="
+

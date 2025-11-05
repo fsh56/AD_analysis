@@ -16,7 +16,7 @@ tissue_name = args[2]
 # Define paths
 gwas_dir = "/gpfs/data/gao-lab/people/Sihao/data/gwas_with_rsid"
 eqtl_dir = "/gpfs/data/gao-lab/people/Sihao/data/eqtl_with_rsid"
-output_dir = "/gpfs/data/gao-lab/people/Sihao/ad_analysis/harmonized_data"
+output_dir = "//gpfs/data/gao-lab/people/Sihao/data/harmo_bk"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

@@ -11,6 +11,10 @@
 module load gcc/12.1.0
 module load R/4.5.1
 
+BASE_DIR="/gpfs/data/gao-lab/people/Sihao"
+R_SCRIPT="${BASE_DIR}/scripts/harm_log.R"
+
+
 # define GWAS files array
 GWAS_FILES=(
     "dlbany.assoc.logistic.with_rsid.txt.gz"
@@ -22,8 +26,7 @@ GWAS_FILES=(
 
 # define tissue
 TISSUE="Brain_Anterior_cingulate_cortex_BA24"
-BASE_DIR="/gpfs/data/gao-lab/people/Sihao"
-R_SCRIPT="${BASE_DIR}/scripts/harm_log.R"
+
 # get current file based on array task ID
 GWAS_FILE=${GWAS_FILES[$SLURM_ARRAY_TASK_ID]}
 

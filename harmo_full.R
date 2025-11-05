@@ -218,14 +218,3 @@ for (chr in 1:22) {
   } # End tissue loop
   
 } # End chromosome loop
-
-# ============================================================================
-# Summary
-# ============================================================================
-
-message("\n========== Harmonization Complete ==========")
-message(paste0("Total expected files: ", total_files))
-message(paste0("Successfully processed: ", processed_files))
-message(paste0("Failed/Missing: ", failed_files))
-message(paste0("Output directory: ", output_dir))
-message("\nDone!")

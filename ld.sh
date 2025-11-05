@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=ld_clump_amy
+#SBATCH --job-name=ld_clump_ba9
 #SBATCH --output=/scratch/sfeng56/logs/ld_%x_chr%a.out
 #SBATCH --error=/scratch/sfeng56/logs/ld_%x_chr%a.err
 #SBATCH --time=3:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=4G
 #SBATCH --array=1-22
 
 # ==========================================================
@@ -20,19 +20,19 @@ module load plink/1.9
 
 # ==================== CONFIGURATION ====================
 # MODIFY THIS SECTION FOR EACH GWAS
-GWAS_NAME="amyloid"  # Change this for each GWAS submission
+GWAS_NAME="dlbany"  # Change this for each GWAS submission
 # =======================================================
 
 # Fixed parameters
-TISSUE_NAME="Brain_Amygdala"
+TISSUE_NAME="Brain_Frontal_Cortex_BA9"
 CLUMP_KB=50
 CLUMP_R2=0.1
 CLUMP_P=0.001
 
 # Directories
 BASE_DIR="/gpfs/data/gao-lab/people/Sihao"
-INPUT_DIR="${BASE_DIR}/data/harmonized_data_Brain_Amygdala"
-OUTPUT_DIR="${BASE_DIR}/AD/amygdala/clumped_data"
+INPUT_DIR="${BASE_DIR}/data/harmonized_data_Brain_Frontal_Cortex_BA9"
+OUTPUT_DIR="${BASE_DIR}/AD/ba9/clumped_data"
 R_SCRIPT="${BASE_DIR}/scripts/ld_clumping_amygdala.R"
 LOG_DIR="/scratch/sfeng56/logs"
 
@@ -144,3 +144,4 @@ fi
 echo ""
 echo "End time: $(date)"
 echo "=================================================="
+
